@@ -1,4 +1,4 @@
-name: skopeo
+name: kaniko
 
 on:
   schedule:
@@ -13,7 +13,7 @@ on:
     - "main"
 
 jobs:
-  skopeo:
+  kaniko:
     runs-on: ubuntu-latest
     steps:
     - name: Set variables useful for later
@@ -23,11 +23,13 @@ jobs:
         echo "::set-output name=short_sha::${GITHUB_SHA::8}"
     - name: Checkout
       uses: actions/checkout@v3
+      with:
+        repository: GoogleContainerTools/kaniko
     - name: Docker meta
       id: docker_meta
       uses: docker/metadata-action@v4
       with:
-        images: ghcr.io/${{ github.repository }}/skopeo
+        images: ghcr.io/${{ github.repository }}/kaniko
         tags: |
           type=schedule
           type=ref,event=branch
@@ -54,13 +56,14 @@ jobs:
       uses: actions/cache@v3
       with:
         path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-skopeo-buildx-${{ github.sha }}
+        key: ${{ runner.os }}-kaniko-buildx-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-skopeo-buildx-
+          ${{ runner.os }}-kaniko-buildx-
     - name: Build and push
       uses: docker/build-push-action@v4
       with:
-        context: skopeo
+        context: .
+        file: deploy/Dockerfile
         push: ${{ github.event_name != 'pull_request' }}
         tags: ${{ steps.docker_meta.outputs.tags }}
         labels: ${{ steps.docker_meta.outputs.labels }}
