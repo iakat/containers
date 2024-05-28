@@ -1,7 +1,7 @@
 FROM node:alpine AS builder
 WORKDIR /app
 
-ENV GLOWING_BEAR_COMMIT=5a494a007f8e655459cdeb5f4a5bf805dd89a895
+ENV GLOWING_BEAR_COMMIT=f39fe804b10b407f00467c8455772e9ce4ba95cf
 
 RUN apk add --virtual=.build-deps git openssh && \
     git clone https://github.com/glowing-bear/glowing-bear glowing-bear && \
