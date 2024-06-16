@@ -1,4 +1,4 @@
 FROM alpine
-RUN apk add --no-cache --virtual=.run-deps kresd tini
+RUN apk add --no-cache --virtual=.run-deps knot-resolver tini
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["kresd", "-a"]
+CMD ["/usr/sbin/kresd", "-a"]
