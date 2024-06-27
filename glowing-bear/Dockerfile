@@ -1,11 +1,12 @@
 FROM node:alpine AS builder
 WORKDIR /app
 
-ENV GLOWING_BEAR_COMMIT=f39fe804b10b407f00467c8455772e9ce4ba95cf
+ENV GLOWING_BEAR_COMMIT=31b020aec0d258629594c8e26eed5cecae9be236
 
 RUN apk add --virtual=.build-deps git openssh && \
-    git clone https://github.com/iakat/glowing-bear glowing-bear && \
+    git clone https://github.com/yeiniel/glowing-bear glowing-bear && \
     cd glowing-bear && \
+    git checkout $GLOWING_BEAR_COMMIT && \
     npm install && \
     npm run build
 
