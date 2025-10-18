@@ -13,7 +13,7 @@ on:
     - "main"
 
 jobs:
-  tilemaker:
+  heartbeat:
     runs-on: ubuntu-latest
     steps:
     - name: Set variables useful for later
@@ -24,13 +24,13 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
       with:
-        repository: 5HT2B/heartbeat
+        repository: iakat/heartbeat
         submodules: recursive
     - name: Docker meta
       id: docker_meta
       uses: docker/metadata-action@v4
       with:
-        images: ghcr.io/${{ github.repository }}/tilemaker
+        images: ghcr.io/${{ github.repository }}/heartbeat
         tags: |
           type=schedule
           type=ref,event=branch
@@ -57,9 +57,9 @@ jobs:
       uses: actions/cache@v3
       with:
         path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-tilemaker-buildx-${{ github.sha }}
+        key: ${{ runner.os }}-heartbeat-buildx-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-tilemaker-buildx-
+          ${{ runner.os }}-heartbeat-buildx-
     - name: Build and push
       uses: docker/build-push-action@v4
       with:
