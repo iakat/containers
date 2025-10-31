@@ -1,0 +1,46 @@
+# This workflow publishes repository metadata periodically
+
+on:
+  schedule:
+    - cron: '11 * * * *'
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  publish-metadata:
+    name: Publish Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate Metadata
+        run: |
+          mkdir -p release-files
+          cat > release-files/metadata.json << EOF
+          {
+            "repository": "${{ github.repository }}",
+            "commit_sha": "${{ github.sha }}",
+            "ref": "${{ github.ref }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "workflow_run_id": "${{ github.run_id }}",
+            "workflow_run_number": "${{ github.run_number }}",
+            "event_name": "${{ github.event_name }}"
+          }
+          EOF
+          cat release-files/metadata.json
+      
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          wget -qO- https://github.com/c4milo/github-release/releases/download/v1.1.0/github-release_v1.1.0_linux_amd64.tar.gz | tar zxvf -
+          sudo mv github-release /usr/local/bin/github-release
+          chmod +x /usr/local/bin/github-release
+          VERSION=$(date +%Y%m%d.%H%M)
+          github-release ${{ github.repository }} $VERSION ${{ github.ref_name }} "Metadata snapshot for $(date -u +%Y-%m-%d)" "release-files/metadata.json"
