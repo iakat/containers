@@ -11,152 +11,116 @@ on:
     branches:
       - "main"
 jobs:
-  build:
+  build-base:
     strategy:
       fail-fast: false
       matrix:
         image:
           - name: ubuntu
             context: images/base
-            dockerfile: ubuntu.Dockerfile
-          - name: desktop
-            context: images/desktop
-            dockerfile: ubuntu.Dockerfile
-          - name: golang
-            context: images/golang
-            dockerfile: ubuntu.Dockerfile
-          - name: java
-            context: images/java
-            dockerfile: ubuntu.Dockerfile
           - name: minimal
             context: images/minimal
-            dockerfile: ubuntu.Dockerfile
-          - name: node
-            context: images/node
-            dockerfile: ubuntu.Dockerfile
         platform:
           - runner: ubuntu-latest
-            arch: linux/amd64
+            arch: amd64
           - runner: ubuntu-24.04-arm
-            arch: linux/arm64
+            arch: arm64
     runs-on: ${{ matrix.platform.runner }}
     steps:
-      - name: Set variables useful for later
-        id: useful_vars
-        run: |
-          echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "short_sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
       - name: Checkout
         uses: actions/checkout@v4
         with:
           repository: coder/images
           submodules: recursive
-      - name: Docker meta
-        id: docker_meta
-        uses: docker/metadata-action@v5
+      - name: Build and push with Kaniko
+        uses: aevea/action-kaniko@master
         with:
-          images: ghcr.io/${{ github.repository }}/code/${{ matrix.image.name }}
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha,prefix=,format=long,event=tag
-            type=sha
-            type=raw,value=latest,enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
-            type=raw,value=${{ github.ref_name }}-${{ steps.useful_vars.outputs.short_sha }}-${{ steps.useful_vars.outputs.timestamp }},enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
-          flavor: |
-            suffix=-${{ matrix.platform.arch == 'linux/amd64' && 'amd64' || 'arm64' }}
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      - name: Login to GHCR
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
+          image: ${{ github.repository }}/code
+          tags: latest-${{ matrix.platform.arch }},${{ github.sha }}-${{ matrix.platform.arch }}
+          path: ${{ matrix.image.context }}
+          build_file: ubuntu.Dockerfile
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Cache Docker layers
-        uses: actions/cache@v4
+          cache: true
+          cache_registry: ${{ matrix.image.name }}/cache
+          extra_args: >-
+            --snapshot-mode=redo --use-new-run --cache-run-layers --cache-copy-layers --cache-ttl=168h --compressed-caching=false --cleanup
+          kaniko_image: martizih/kaniko:latest
+  build-derived:
+    needs: build-base
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - name: desktop
+            context: images/desktop
+          - name: golang
+            context: images/golang
+          - name: java
+            context: images/java
+          - name: node
+            context: images/node
+        platform:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-${{ matrix.image.name }}-${{ matrix.platform.arch }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.image.name }}-${{ matrix.platform.arch }}-buildx-
-      - name: Build and push
-        uses: docker/build-push-action@v6
+          repository: coder/images
+          submodules: recursive
+      - name: Replace base image references
+        run: |
+          DOCKERFILE="${{ matrix.image.context }}/ubuntu.Dockerfile"
+          sed -i 's|codercom/enterprise-base:ubuntu|ghcr.io/${{ github.repository }}/ubuntu:latest|g' "$DOCKERFILE"
+          sed -i 's|codercom/enterprise-minimal:latest|ghcr.io/${{ github.repository }}/minimal:latest|g' "$DOCKERFILE"
+      - name: Build and push with Kaniko
+        uses: aevea/action-kaniko@master
         with:
-          context: ${{ matrix.image.context }}
-          file: ${{ matrix.image.context }}/${{ matrix.image.dockerfile }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.docker_meta.outputs.tags }}
-          labels: ${{ steps.docker_meta.outputs.labels }}
-          platforms: ${{ matrix.platform.arch }}
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
-  # Create multi-arch manifests after all platform builds complete
+          image: ${{ github.repository }}/${{ matrix.image.name }}
+          tags: latest-${{ matrix.platform.arch }},${{ github.sha }}-${{ matrix.platform.arch }}
+          path: ${{ matrix.image.context }}
+          build_file: ubuntu.Dockerfile
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          cache: true
+          cache_registry: ghcr.io/${{ github.repository }}/${{ matrix.image.name }}/cache
+          extra_args: >-
+            --snapshot-mode=redo --use-new-run --cache-run-layers --cache-copy-layers --cache-ttl=168h --compressed-caching=false --cleanup
+          kaniko_image: martizih/kaniko:latest
   manifest:
-    needs: build
+    needs: [build-base, build-derived]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - ubuntu
-          - desktop
-          - golang
-          - java
-          - minimal
-          - node
+        image: [ubuntu, minimal, desktop, golang, java, node]
     steps:
-      - name: Set variables useful for later
-        id: useful_vars
-        run: |
-          echo "timestamp=$(date +%s)" >> $GITHUB_OUTPUT
-          echo "short_sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
+      - name: Setup crane
+        uses: imjasonh/setup-crane@v0.4
       - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Docker meta
-        id: docker_meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}/code/${{ matrix.image }}
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha,prefix=,format=long,event=tag
-            type=sha
-            type=raw,value=latest,enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
-            type=raw,value=${{ github.ref_name }}-${{ steps.useful_vars.outputs.short_sha }}-${{ steps.useful_vars.outputs.timestamp }},enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
+        run: crane auth login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
       - name: Create and push manifest
         run: |-
-          TAGS="${{ steps.docker_meta.outputs.tags }}"
-          IMAGE_BASE="ghcr.io/${{ github.repository }}/code/${{ matrix.image }}"
+          IMAGE="ghcr.io/${{ github.repository }}/${{ matrix.image }}"
 
-          for TAG in $TAGS; do
-            # Extract just the tag portion after the colon
-            TAG_NAME="${TAG##*:}"
-
-            docker manifest create "${IMAGE_BASE}:${TAG_NAME}" \
-              "${IMAGE_BASE}:${TAG_NAME}-amd64" \
-              "${IMAGE_BASE}:${TAG_NAME}-arm64"
-
-            docker manifest annotate "${IMAGE_BASE}:${TAG_NAME}" \
-              "${IMAGE_BASE}:${TAG_NAME}-amd64" --arch amd64
-
-            docker manifest annotate "${IMAGE_BASE}:${TAG_NAME}" \
-              "${IMAGE_BASE}:${TAG_NAME}-arm64" --arch arm64
-
-            docker manifest push "${IMAGE_BASE}:${TAG_NAME}"
+          for TAG in latest ${{ github.sha }}; do
+            crane index append \
+              --tag "${IMAGE}:${TAG}" \
+              --manifest "${IMAGE}:${TAG}-amd64" \
+              --manifest "${IMAGE}:${TAG}-arm64"
           done
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${{ github.ref_name }}"
+            crane index append \
+              --tag "${IMAGE}:${VERSION}" \
+              --manifest "${IMAGE}:${VERSION}-amd64" \
+              --manifest "${IMAGE}:${VERSION}-arm64"
+          fi
