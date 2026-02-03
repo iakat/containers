@@ -1,0 +1,72 @@
+name: dockerio
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Docker Hub image (e.g., nginx, library/alpine)'
+        required: true
+        type: string
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+
+env:
+  # Define images to mirror (format: source -> mirrored to ghcr.io/$REPO/docker.io/source)
+  IMAGES: |
+    netbirdio/management
+    netbirdio/dashboard
+    netbirdio/relay
+    netbirdio/signal
+
+jobs:
+  # Build matrix of images to mirror
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          if [ -n "${{ inputs.image }}" ]; then
+            # Manual trigger - single image
+            echo "matrix=[\"${{ inputs.image }}\"]" >> $GITHUB_OUTPUT
+          else
+            # Scheduled - all images from IMAGES env
+            MATRIX=$(echo "$IMAGES" | grep -v '^$' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          fi
+
+  mirror:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    strategy:
+      fail-fast: false
+      max-parallel: 4  # Parallel image mirroring
+      matrix:
+        image: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Setup crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Login to GHCR
+        run: crane auth login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub (optional, increases rate limits)
+        if: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: crane auth login docker.io -u ${{ secrets.DOCKERHUB_USERNAME }} -p $DOCKERHUB_TOKEN
+        continue-on-error: true
+
+      - name: Mirror ${{ matrix.image }}
+        run: |
+          SOURCE="docker.io/${{ matrix.image }}"
+          DEST="ghcr.io/${{ github.repository }}/docker.io/${{ matrix.image }}"
+          
+          echo "Mirroring: $SOURCE -> $DEST"
+          
+          # Copy all tags with parallel jobs, overwriting existing tags
+          # -a: all tags, -j: parallel jobs
+          crane copy "$SOURCE" "$DEST" --all-tags -j 4
