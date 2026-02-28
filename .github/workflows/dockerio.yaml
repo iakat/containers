@@ -17,7 +17,7 @@ env:
     netbirdio/dashboard
     netbirdio/relay
     netbirdio/signal
-
+    library/haproxy
 jobs:
   # Build matrix of images to mirror
   prepare:
