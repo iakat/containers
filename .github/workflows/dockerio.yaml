@@ -8,8 +8,7 @@ on:
         required: true
         type: string
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight UTC
-
+    - cron: '0 0 * * *' # Daily at midnight UTC
 env:
   # Define images to mirror (format: source -> mirrored to ghcr.io/$REPO/docker.io/source)
   IMAGES: |
@@ -35,7 +34,6 @@ jobs:
             MATRIX=$(echo "$IMAGES" | grep -v '^$' | jq -R -s -c 'split("\n") | map(select(length > 0))')
             echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
           fi
-
   mirror:
     needs: prepare
     runs-on: ubuntu-latest
@@ -43,16 +41,14 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
-      max-parallel: 4  # Parallel image mirroring
+      max-parallel: 4 # Parallel image mirroring
       matrix:
         image: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - name: Setup crane
         uses: imjasonh/setup-crane@v0.4
-
       - name: Login to GHCR
         run: crane auth login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-
       - name: Login to Docker Hub (optional, increases rate limits)
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -62,12 +58,11 @@ jobs:
             crane auth login docker.io -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN"
           fi
         continue-on-error: true
-
       - name: Mirror ${{ matrix.image }}
         run: |
           SOURCE="docker.io/${{ matrix.image }}"
           DEST="ghcr.io/${{ github.repository }}/docker.io/${{ matrix.image }}"
-          
+
           # Retry with exponential backoff
           retry() {
             local max=5 delay=30 attempt=1
@@ -78,35 +73,35 @@ jobs:
             done
             return 1
           }
-          
+
           # Copy single tag if digest differs
           copy_tag() {
             local tag="$1"
             local src_digest dst_digest
-            
+
             src_digest=$(retry crane digest "$SOURCE:$tag" 2>/dev/null) || return 1
             dst_digest=$(crane digest "$DEST:$tag" 2>/dev/null) || dst_digest=""
-            
+
             if [ "$src_digest" = "$dst_digest" ]; then
               echo "⏭️  $tag (unchanged)"
             else
               retry crane copy "$SOURCE:$tag" "$DEST:$tag" && echo "✅ $tag"
             fi
           }
-          
+
           echo "Mirroring: $SOURCE -> $DEST"
-          
+
           # Get last 10 tags + ensure latest is included first
-          TAGS=$(retry crane ls "$SOURCE" | tail -10)
+          TAGS=$(retry crane ls "$SOURCE")
           if retry crane manifest "$SOURCE:latest" >/dev/null 2>&1; then
             TAGS=$(echo -e "latest\n$TAGS" | awk '!seen[$0]++')
           fi
-          
+
           echo "Tags: $TAGS"
-          
+
           # Export for subshells
           export SOURCE DEST
           export -f retry copy_tag
-          
+
           # Copy in parallel
           echo "$TAGS" | xargs -P4 -I{} bash -c 'copy_tag "{}"'
