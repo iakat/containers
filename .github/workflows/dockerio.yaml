@@ -18,6 +18,7 @@ env:
     netbirdio/signal
     library/haproxy
     rclone/rclone
+    kanidm/server 
 jobs:
   # Build matrix of images to mirror
   prepare:
