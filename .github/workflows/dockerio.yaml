@@ -17,6 +17,7 @@ env:
     netbirdio/relay
     netbirdio/signal
     library/haproxy
+    rclone/rclone
 jobs:
   # Build matrix of images to mirror
   prepare:
