@@ -20,6 +20,7 @@ env:
     rclone/rclone
     kanidm/server
     pingcap/tcpcopy
+    weechat/weechat
 jobs:
   # Build matrix of images to mirror
   prepare:
