@@ -17,6 +17,8 @@ env:
     netbirdio/relay
     netbirdio/signal
     library/haproxy
+    library/busybox
+    library/alpine
     rclone/rclone
     kanidm/server
     pingcap/tcpcopy
