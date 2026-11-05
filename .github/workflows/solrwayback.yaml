@@ -1,6 +1,7 @@
 name: solrwayback
 
 on:
+  workflow_dispatch:
   schedule:
   - cron: "0 10 * * *"
   push:
@@ -37,6 +38,7 @@ jobs:
           type=semver,pattern={{major}}
           type=sha,prefix=,format=long,event=tag
           type=sha
+          type=raw,value=5.5.0
           type=raw,value=latest,enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
           type=raw,value=${{ github.ref_name }}-${{ steps.useful_vars.outputs.short_sha }}-${{ steps.useful_vars.outputs.timestamp }},enable=${{ endsWith(github.ref, github.event.repository.default_branch) }}
     - name: Set up QEMU
