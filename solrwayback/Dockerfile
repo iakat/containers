@@ -29,6 +29,7 @@ COPY nanoseconds.patch /tmp/nanoseconds.patch
 
 RUN cd /src && \
     git apply /tmp/nanoseconds.patch && \
+    mkdir -p src/js/dist && \
     mvn -q -Dmaven.test.skip=true -Dskip.npm -Dskip.installnodenpm package
 
 FROM amazoncorretto:17-alpine
