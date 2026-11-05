@@ -13,6 +13,24 @@ RUN wget -q "https://github.com/netarchivesuite/solrwayback/releases/download/${
     rm bundle.zip && \
     mv "solrwayback_package_${SOLRWAYBACK_VERSION}" solrwayback
 
+# Build the WAR from source so the nanosecond WARC-Date fix is included.
+FROM maven:3.9-eclipse-temurin-17 AS war
+
+ARG SOLRWAYBACK_VERSION=5.5.0
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 --branch "${SOLRWAYBACK_VERSION}" \
+        https://github.com/netarchivesuite/solrwayback.git /src
+
+COPY nanoseconds.patch /tmp/nanoseconds.patch
+
+RUN cd /src && \
+    git apply /tmp/nanoseconds.patch && \
+    mvn -q -Dmaven.test.skip=true package
+
 FROM amazoncorretto:17-alpine
 
 ARG SOLRWAYBACK_VERSION=5.5.0
@@ -30,6 +48,11 @@ RUN apk add --no-cache bash lsof curl bc procps tini && \
     mkdir -p ${SOLRWAYBACK_HOME}
 
 COPY --from=builder --chown=solrwayback:solrwayback /build/solrwayback ${SOLRWAYBACK_HOME}
+
+# Replace the bundle WAR with the patched source build.
+COPY --from=war --chown=solrwayback:solrwayback \
+    /src/target/solrwayback-${SOLRWAYBACK_VERSION}.war \
+    ${SOLRWAYBACK_HOME}/tomcat-9/webapps/solrwayback.war
 
 # Keep only the /solrwayback context. ROOT.war is the optional root servlet and
 # conflicts with the oauth2-proxy front door we use.
