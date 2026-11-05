@@ -29,7 +29,7 @@ COPY nanoseconds.patch /tmp/nanoseconds.patch
 
 RUN cd /src && \
     git apply /tmp/nanoseconds.patch && \
-    mvn -q -Dmaven.test.skip=true package
+    mvn -q -Dmaven.test.skip=true -Dskip.npm -Dskip.installnodenpm package
 
 FROM amazoncorretto:17-alpine
 
@@ -49,10 +49,19 @@ RUN apk add --no-cache bash lsof curl bc procps tini && \
 
 COPY --from=builder --chown=solrwayback:solrwayback /build/solrwayback ${SOLRWAYBACK_HOME}
 
-# Replace the bundle WAR with the patched source build.
-COPY --from=war --chown=solrwayback:solrwayback \
-    /src/target/solrwayback-${SOLRWAYBACK_VERSION}.war \
-    ${SOLRWAYBACK_HOME}/tomcat-9/webapps/solrwayback.war
+# The source build above only produces Java classes (the npm frontend build is
+# skipped). Copy just the patched SRequest class into the bundle WAR, which has
+# the complete frontend assets.
+COPY --from=war /src/target/solrwayback-${SOLRWAYBACK_VERSION}.war /tmp/solrwayback-patched.war
+RUN set -eux; \
+    mkdir -p /tmp/srequest; \
+    cd /tmp/srequest; \
+    jar xf /tmp/solrwayback-patched.war \
+        WEB-INF/classes/dk/kb/netarchivesuite/solrwayback/solr/SRequest.class; \
+    cd ${SOLRWAYBACK_HOME}/tomcat-9/webapps; \
+    jar uf solrwayback.war -C /tmp/srequest \
+        WEB-INF/classes/dk/kb/netarchivesuite/solrwayback/solr/SRequest.class; \
+    rm -rf /tmp/srequest /tmp/solrwayback-patched.war
 
 # Keep only the /solrwayback context. ROOT.war is the optional root servlet and
 # conflicts with the oauth2-proxy front door we use.
